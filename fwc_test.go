@@ -330,12 +330,7 @@ func TestWriteMessage(t *testing.T) {
 
 }
 
-/*
-	// Create test server with the echo handler.
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		echo(w, r)
-	}))
-	defer s.Close()
+func TestWriteMessageToChangingDestination(t *testing.T) {
 
 	closed := make(chan struct{})
 
@@ -347,122 +342,87 @@ func TestWriteMessage(t *testing.T) {
 
 	id := "rule0"
 	stream := "/stream/large"
-	destination := "ws" + strings.TrimPrefix(s.URL, "http")
+	filename := "./large.ts"
 
 	r := &Rule{Id: id,
-		Stream:      stream,
-		Destination: destination}
+		Stream:   stream,
+		Filename: filename}
 
 	h.Add <- *r
 
 	reply := make(chan hub.Message)
 
-	c := &hub.Client{Hub: mh, Name: "a", Topic: stream, Send: reply}
+	c := &hub.Client{Hub: mh, Name: "testing", Topic: stream, Send: reply}
 
 	mh.Register <- c
 
 	time.Sleep(time.Millisecond)
 
-	payload := []byte("test message")
+	lines := []string{"test\n", "message\n"}
+
+	payload := []byte(lines[0])
 
 	mh.Broadcast <- hub.Message{Data: payload, Type: websocket.TextMessage, Sender: *c, Sent: time.Now()}
-
-	msg := <-reply
-
-	if bytes.Compare(msg.Data, payload) != 0 {
-		t.Error("Got wrong message")
-	}
-
-	close(closed)
-
-}
-
-func TestSendMessageToChangingDestination(t *testing.T) {
-
-	// Create test server with the echo handler
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		echo(w, r)
-	}))
-	//	s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	//		echo(w, r)
-	//	}))
-	//
-	//	url := "127.0.0.1:8099"
-	//	l, err := net.Listen("tcp", url)
-	//
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
-	//
-	//	s.Listener.Close()
-	//	s.Listener = l
-	//	s.Start()
-	//	defer s.Close()
-
-	// Create test server with the echo handler.
-	s2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		shout(w, r)
-	}))
-
-	defer s2.Close()
-
-	closed := make(chan struct{})
-
-	mh := hub.New()
-	go mh.Run(closed)
-
-	h := New(mh)
-	go h.Run(closed)
-
-	id := "rule0"
-	stream := "/stream/large"
-	destination := "ws" + strings.TrimPrefix(s.URL, "http")
-
-	r := &Rule{Id: id,
-		Stream:      stream,
-		Destination: destination}
-
-	h.Add <- *r
-
-	reply := make(chan hub.Message)
-
-	c := &hub.Client{Hub: mh, Name: "a", Topic: stream, Send: reply}
-
-	mh.Register <- c
 
 	time.Sleep(time.Millisecond)
 
-	payload := []byte("test message")
-
-	mh.Broadcast <- hub.Message{Data: payload, Type: websocket.TextMessage, Sender: *c, Sent: time.Now()}
-
-	msg := <-reply
-
-	if bytes.Compare(msg.Data, payload) != 0 {
-		t.Error("Got wrong message")
-	}
-
-	destination = "ws" + strings.TrimPrefix(s2.URL, "http")
+	filename2 := "./large2.ts"
 
 	r = &Rule{Id: id,
-		Stream:      stream,
-		Destination: destination}
+		Stream:   stream,
+		Filename: filename2}
 
 	h.Add <- *r
 
-	mh.Register <- c
-
 	time.Sleep(time.Millisecond)
+
+	payload = []byte(lines[1])
 
 	mh.Broadcast <- hub.Message{Data: payload, Type: websocket.TextMessage, Sender: *c, Sent: time.Now()}
 
-	msg = <-reply
+	time.Sleep(time.Millisecond)
 
-	if bytes.Compare(msg.Data, []byte("TEST MESSAGE")) != 0 {
-		t.Error("Did not change server")
+	h.Delete <- r.Id
+
+	time.Sleep(time.Millisecond)
+
+	dat, err := ioutil.ReadFile(filename)
+	if err != nil {
+		t.Error("Error reading file", err)
 	}
 
-	close(closed)
-}
+	tokens := strings.Fields(string(dat))
 
-*/
+	if len(tokens) != 1 {
+		t.Errorf("Incorrect number of lines in file; got %d, wanted %d\n", len(tokens), 1)
+	} else {
+		if strings.TrimSpace(lines[0]) != strings.TrimSpace(tokens[0]) {
+			t.Errorf("lines in file did not match messages %s/%s", lines[0], tokens[0])
+		}
+	}
+
+	dat, err = ioutil.ReadFile(filename2)
+	if err != nil {
+		t.Error("Error reading file", err)
+	}
+
+	tokens = strings.Fields(string(dat))
+
+	if len(tokens) != 1 {
+		t.Errorf("Incorrect number of lines in file; got %d, wanted %d\n", len(tokens), 1)
+	} else {
+		if strings.TrimSpace(lines[1]) != strings.TrimSpace(tokens[0]) {
+			t.Errorf("lines in file did not match messages %s/%s", lines[1], tokens[0])
+		}
+	}
+
+	err = os.Remove(filename)
+	if err != nil {
+		t.Errorf("Error deleting test file %s\n", filename)
+	}
+
+	err = os.Remove(filename2)
+	if err != nil {
+		t.Errorf("Error deleting test file %s\n", filename)
+	}
+}
